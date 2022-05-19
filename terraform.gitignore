@@ -1,4 +1,0 @@
-*.tfstate
-*.tfstate.*
-*.tfvars
-vars.tf
