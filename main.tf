@@ -133,6 +133,7 @@ output "server_public_ip" {
 resource "aws_instance" "first-server" {
   ami           = "ami-005de95e8ff495156"
   instance_type = "t2.micro"
+  security_groups = [aws_security_group.allow_web.name]
   availability_zone = "us-east-1a"
   key_name = "main-key"
 
@@ -152,6 +153,57 @@ resource "aws_instance" "first-server" {
     Name = "ubuntu"
   }
 }
+
+#Create ALB
+resource "aws_alb" "alb" {
+  name            = "terraform-example-alb"
+  security_groups = ["${aws_security_group.allow_web.id}"]
+  subnets         = ["${aws_subnet.my_subnet.id, my_subnet2.id}"]
+  tags {
+    Name = "terraform-example-alb"
+  }
+}
+
+
+#Create a new target group for the application load balancer. Traffic will be routed to target web server instances on HTTP port 80.
+resource "aws_alb_target_group" "group" {
+  name     = "terraform-example-alb-target"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = "${aws_vpc.first-vpc.id}"
+  stickiness {
+    type = "lb_cookie"
+  }
+  # Alter the destination of the health check to be the login page.
+  health_check {
+    path = "/login"
+    port = 80
+  }
+}
+#The first listener is configured to accept HTTP client connections.
+resource "aws_alb_listener" "listener_http" {
+  load_balancer_arn = "${aws_alb.alb.arn}"
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    target_group_arn = "${aws_alb_target_group.group.arn}"
+    type             = "forward"
+  }
+}
+
+#AutoScaling Group
+resource "aws_autoscaling_group" "web_server_asg" {
+  name                 = "web-server-asg"
+  launch_configuration = aws_instance.first-server.name
+  min_size             = 1
+  max_size             = 3
+  desired_capacity     = 2
+  health_check_type    = "EC2"
+  load_balancers       = [aws_elb.web_server_lb.name]
+  vpc_zone_identifier  = [aws_subnet.my_subnet.id, my_subnet2.id]
+}
+
 output "server_private_ip" {
  value = aws_instance.first-server.private_ip
 }
